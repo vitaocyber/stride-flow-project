@@ -1,0 +1,5 @@
+{
+  "name": "StrideFlow - Treinamento de Corrida",
+  "description": "Plataforma completa para corredores com planos de treino personalizados, dashboard de performance e ebook exclusivo.",
+  "requestFramePermissions": ["geolocation"]
+}
