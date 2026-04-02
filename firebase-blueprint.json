@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile and statistics",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "cpf": { "type": "string", "description": "Brazilian Taxpayer ID (11 digits)" },
+        "bio": { "type": "string" },
+        "totalDistance": { "type": "number" },
+        "totalRuns": { "type": "integer" },
+        "followers": { "type": "array", "items": { "type": "string" } },
+        "following": { "type": "array", "items": { "type": "string" } },
+        "completedWorkouts": { "type": "array", "items": { "type": "string" } },
+        "hasPurchasedEbook": { "type": "boolean" },
+        "currentPlan": { "type": "object" }
+      },
+      "required": ["uid", "email", "displayName"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "A running activity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "distance": { "type": "number" },
+        "duration": { "type": "number" },
+        "pace": { "type": "string" },
+        "elevationGain": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "path": { "type": "array", "items": { "type": "object" } },
+        "notes": { "type": "string" },
+        "activityType": { "type": "string" },
+        "likes": { "type": "array", "items": { "type": "string" } },
+        "communityId": { "type": "string" },
+        "comments": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["userEmail", "distance", "duration", "date"]
+    },
+    "Community": {
+      "title": "Community",
+      "description": "A running community group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name", "members"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "A running event",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "location": { "type": "string" },
+        "description": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["title", "date", "location"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles"
+    },
+    "/activities/{activityId}": {
+      "schema": "Activity",
+      "description": "Running activities"
+    },
+    "/communities/{communityId}": {
+      "schema": "Community",
+      "description": "Running communities"
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Running events"
+    }
+  }
+}

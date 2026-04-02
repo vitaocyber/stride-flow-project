@@ -1,0 +1,173 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (uid)
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (required)
+    //   - email: string (required)
+    //   - bio: string (optional)
+    //   - totalDistance: number
+    //   - totalRuns: integer
+    //   - followers: array of strings (emails/uids)
+    //   - following: array of strings (emails/uids)
+    //   - completedWorkouts: array of strings (workout IDs)
+    //   - hasPurchasedEbook: boolean
+    //   - currentPlan: map (plan data)
+    //   - role: string ('admin', 'user')
+    //
+    // Collection: activities
+    // Document ID: activityId (auto-generated)
+    // Fields:
+    //   - id: string
+    //   - userEmail: string (required)
+    //   - userName: string
+    //   - distance: number (required)
+    //   - duration: number (required)
+    //   - pace: string
+    //   - elevationGain: number
+    //   - date: timestamp (required)
+    //   - path: array of maps
+    //   - notes: string
+    //   - activityType: string
+    //   - likes: array of strings (user emails)
+    //   - communityId: string (optional)
+    //   - comments: array of maps
+    //
+    // Collection: communities
+    // Document ID: communityId (auto-generated)
+    // Fields:
+    //   - id: string
+    //   - name: string (required)
+    //   - description: string
+    //   - members: array of strings (user emails)
+    //   - createdBy: string (user email)
+    //
+    // Collection: events
+    // Document ID: eventId (auto-generated)
+    // Fields:
+    //   - id: string
+    //   - title: string (required)
+    //   - date: timestamp (required)
+    //   - location: string (required)
+    //   - description: string
+    //   - participants: array of strings (user emails)
+    //   - createdBy: string (user email)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "kaneki0202fake@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidCPF(cpf) {
+      // Basic format check: 11 digits
+      return cpf is string && cpf.matches("^\\d{11}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // User Profile Validation
+    function isValidUser(data) {
+      return data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             (!('cpf' in data) || isValidCPF(data.cpf)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
+             (!('role' in data) || data.role in ['admin', 'user']);
+    }
+
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && 
+                      (request.resource.data.role == 'user' || isAdmin());
+      allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && 
+                      (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    // Activity Validation
+    function isValidActivity(data) {
+      return data.userEmail is string && isValidEmail(data.userEmail) &&
+             data.distance is number && data.distance >= 0 &&
+             data.duration is number && data.duration >= 0 &&
+             data.date is timestamp &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() < 1000));
+    }
+
+    match /activities/{activityId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidActivity(request.resource.data) && 
+                      (request.resource.data.userEmail == request.auth.token.email || isAdmin());
+      allow update: if isAuthenticated() && (
+                      (resource.data.userEmail == request.auth.token.email && isValidActivity(request.resource.data)) || 
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'comments'])) ||
+                      isAdmin()
+                    );
+      allow delete: if isAuthenticated() && (resource.data.userEmail == request.auth.token.email || isAdmin());
+    }
+
+    // Community Validation
+    function isValidCommunity(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.members is list && data.members.size() < 1000;
+    }
+
+    match /communities/{communityId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidCommunity(request.resource.data);
+      allow update: if isAuthenticated() && (
+                      (request.auth.token.email in resource.data.members && isValidCommunity(request.resource.data)) || 
+                      isAdmin()
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // Event Validation
+    function isValidEvent(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
+             data.date is timestamp &&
+             data.location is string && data.location.size() > 0;
+    }
+
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidEvent(request.resource.data);
+      allow update: if isAuthenticated() && (
+                      (isValidEvent(request.resource.data)) || 
+                      isAdmin()
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

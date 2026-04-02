@@ -25,6 +25,7 @@ export interface RunActivity {
   date: string;
   distance: number; // km
   duration: number; // seconds
+  elevationGain: number; // meters
   pace: string; // min/km
   path: { lat: number; lng: number }[];
   notes?: string;
@@ -43,6 +44,7 @@ export interface RunActivity {
 export interface UserProfile {
   email: string;
   displayName: string;
+  cpf?: string;
   bio?: string;
   avatarUrl?: string;
   totalDistance: number;
@@ -50,6 +52,8 @@ export interface UserProfile {
   followers: string[];
   following: string[];
   completedWorkouts: string[]; // workout IDs
+  currentPlan?: TrainingPlan;
+  hasPurchasedEbook?: boolean;
 }
 
 export interface UserStats {
