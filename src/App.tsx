@@ -705,24 +705,34 @@ export default function App() {
     const id = navigator.geolocation.watchPosition(
       (position) => {
         if (isPaused) return;
-        const { latitude, longitude, altitude } = position.coords;
+        const { latitude, longitude, altitude, accuracy } = position.coords;
+        
+        // Ignora pontos com baixa precisão (pior que 30 metros)
+        if (accuracy && accuracy > 30) return;
+
         setCurrentRun(prev => {
-          const newPoint = { lat: latitude, lng: longitude };
           const lastPoint = prev.path[prev.path.length - 1];
           let newDistance = prev.distance;
           let newElevationGain = prev.elevationGain;
           
           if (lastPoint) {
-            newDistance += calculateDistance(lastPoint.lat, lastPoint.lng, latitude, longitude);
+            const dist = calculateDistance(lastPoint.lat, lastPoint.lng, latitude, longitude);
+            
+            // Redução de ruído: ignora movimentos menores que 3 metros
+            if (dist < 0.003) return prev; 
+            
+            newDistance += dist;
           }
 
           if (altitude !== null && prev.lastAltitude !== null) {
             const diff = altitude - prev.lastAltitude;
-            if (diff > 0) {
+            // Ignora flutuações pequenas de altitude (ruído)
+            if (diff > 0.5) { 
               newElevationGain += diff;
             }
           }
 
+          const newPoint = { lat: latitude, lng: longitude };
           return {
             ...prev,
             distance: newDistance,
@@ -732,8 +742,12 @@ export default function App() {
           };
         });
       },
-      (error) => console.error(error),
-      { enableHighAccuracy: true }
+      (error) => console.error("Erro no GPS:", error),
+      { 
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
     );
     setWatchId(id);
   };
@@ -1144,12 +1158,12 @@ export default function App() {
               </AnimatePresence>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
               {user ? (
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-white/40 hidden sm:block">{user.email}</span>
+                <div className="flex items-center gap-2 md:gap-4">
+                  <span className="text-[10px] md:text-xs text-white/40 hidden lg:block">{user.email}</span>
                   <button onClick={handleLogout} className="p-2 text-white/60 hover:text-red-500 transition-colors">
-                    <LogOut size={20} />
+                    <LogOut size={18} className="md:w-5 md:h-5" />
                   </button>
                   <AnimatePresence mode="popLayout">
                     {activeTab !== 'profile' && (
@@ -1161,21 +1175,99 @@ export default function App() {
                         exit={{ scale: 0.5, y: 20, opacity: 0 }}
                         transition={{ type: "spring", stiffness: 500, damping: 30 }}
                         onClick={() => setActiveTab('profile')} 
-                        className="w-10 h-10 rounded-full border border-white/20 hover:border-white/40 flex items-center justify-center overflow-hidden transition-all"
+                        className="w-8 h-8 md:w-10 md:h-10 rounded-full border border-white/20 hover:border-white/40 flex items-center justify-center overflow-hidden transition-all"
                       >
-                        <User size={20} className="text-white" />
+                        <User size={16} className="md:w-5 md:h-5 text-white" />
                       </motion.button>
                     )}
                   </AnimatePresence>
                 </div>
               ) : (
-                <button onClick={() => setShowLoginModal(true)} className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all">
+                <button onClick={() => setShowLoginModal(true)} className="px-3 py-1.5 md:px-4 md:py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs md:text-sm font-bold transition-all">
                   Login
                 </button>
               )}
             </div>
           </div>
         </nav>
+
+        {/* Mobile Navigation Bar */}
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-4 pb-6 pt-2 bg-black/80 backdrop-blur-xl border-t border-white/5">
+          <div className="flex items-center justify-around max-w-lg mx-auto">
+            <AnimatePresence mode="popLayout">
+              {activeTab !== 'home' && (
+                <motion.button 
+                  key="home-mobile"
+                  layout
+                  initial={{ scale: 0.5, y: 10, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.5, y: 20, opacity: 0 }}
+                  onClick={() => setActiveTab('home')} 
+                  className="flex flex-col items-center gap-1 text-white"
+                >
+                  <Activity size={20} />
+                  <span className="text-[10px] font-bold">Início</span>
+                </motion.button>
+              )}
+              {activeTab !== 'dashboard' && (
+                <motion.button 
+                  key="dashboard-mobile"
+                  layout
+                  initial={{ scale: 0.5, y: 10, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.5, y: 20, opacity: 0 }}
+                  onClick={() => setActiveTab('dashboard')} 
+                  className="flex flex-col items-center gap-1 text-white"
+                >
+                  <Calendar size={20} />
+                  <span className="text-[10px] font-bold">Treinos</span>
+                </motion.button>
+              )}
+              {activeTab !== 'run' && (
+                <motion.button 
+                  key="run-mobile"
+                  layout
+                  initial={{ scale: 0.5, y: 10, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.5, y: 20, opacity: 0 }}
+                  onClick={() => setActiveTab('run')} 
+                  className="flex flex-col items-center gap-1 text-white"
+                >
+                  <Play size={20} />
+                  <span className="text-[10px] font-bold">Correr</span>
+                </motion.button>
+              )}
+              {activeTab !== 'feed' && (
+                <motion.button 
+                  key="feed-mobile"
+                  layout
+                  initial={{ scale: 0.5, y: 10, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.5, y: 20, opacity: 0 }}
+                  onClick={() => setActiveTab('feed')} 
+                  className="flex flex-col items-center gap-1 text-white"
+                >
+                  <MessageSquare size={20} />
+                  <span className="text-[10px] font-bold">Feed</span>
+                </motion.button>
+              )}
+              {activeTab !== 'communities' && (
+                <motion.button 
+                  key="communities-mobile"
+                  layout
+                  initial={{ scale: 0.5, y: 10, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.5, y: 20, opacity: 0 }}
+                  onClick={() => setActiveTab('communities')} 
+                  className="flex flex-col items-center gap-1 text-white"
+                >
+                  <Users size={20} />
+                  <span className="text-[10px] font-bold">Grupos</span>
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
 
       <main className={cn("transition-all duration-500", activeTab === 'run' ? "pt-0" : "pt-20")}>
         <AnimatePresence mode="wait">
@@ -1188,23 +1280,25 @@ export default function App() {
                     <Navigation size={14} className={isTracking && !isPaused ? "animate-pulse" : ""} /> {isTracking ? (isPaused ? "Corrida Pausada" : "Gravando Corrida") : "Pronto para Correr"}
                   </div>
                   
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-12 mb-12">
-                    <div className="col-span-2 md:col-span-1">
-                      <p className="text-xs text-white/40 font-bold uppercase tracking-widest mb-2">Distância</p>
-                      <p className="text-5xl md:text-7xl font-black tracking-tighter">{currentRun.distance.toFixed(2)}<span className="text-xl text-white/20 ml-2">km</span></p>
-                    </div>
-                    <div className="col-span-2 md:col-span-1">
-                      <p className="text-xs text-white/40 font-bold uppercase tracking-widest mb-2">Tempo</p>
-                      <p className="text-5xl md:text-7xl font-black tracking-tighter font-mono">{formatDuration(currentRun.duration)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-white/40 font-bold uppercase tracking-widest mb-2">Pace</p>
-                      <p className="text-3xl md:text-5xl font-black tracking-tighter">{currentRun.distance > 0 ? (currentRun.duration / 60 / currentRun.distance).toFixed(2).replace('.', ':') : "0:00"}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-white/40 font-bold uppercase tracking-widest mb-2">Elevação</p>
-                      <p className="text-3xl md:text-5xl font-black tracking-tighter">{Math.round(currentRun.elevationGain)}<span className="text-lg text-white/20 ml-1">m</span></p>
-                    </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-12">
+                    {[
+                      { label: 'Distância', value: currentRun.distance.toFixed(2), unit: 'km' },
+                      { label: 'Tempo', value: formatDuration(currentRun.duration), unit: '' },
+                      { label: 'Ritmo (Pace)', value: currentRun.distance > 0 ? (currentRun.duration / 60 / currentRun.distance).toFixed(2).replace('.', ':') : "0:00", unit: '' },
+                      { label: 'Elevação', value: Math.round(currentRun.elevationGain).toString(), unit: 'm' }
+                    ].map((item, i) => (
+                      <div key={i} className="bg-white/5 border border-white/10 rounded-[2rem] p-4 md:p-6 flex flex-col items-center justify-center min-w-0 overflow-hidden">
+                        <p className="text-[9px] md:text-xs text-white/40 font-bold uppercase tracking-widest mb-2 truncate w-full text-center">{item.label}</p>
+                        <div className="flex items-baseline justify-center gap-0.5 md:gap-1 w-full">
+                          <span className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tighter font-mono truncate">
+                            {item.value}
+                          </span>
+                          {item.unit && (
+                            <span className="text-[10px] md:text-sm text-white/20 font-bold uppercase shrink-0">{item.unit}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
                   {isTracking && (
@@ -1694,26 +1788,26 @@ export default function App() {
           )}
 
           {activeTab === 'home' && (
-            <motion.div key="home" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="px-6 py-20 max-w-7xl mx-auto">
-              <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <motion.div key="home" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="px-4 md:px-6 py-12 md:py-20 max-w-7xl mx-auto">
+              <div className="grid lg:grid-cols-2 gap-8 md:gap-12 items-center">
                 <div>
-                  <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-600/10 border border-red-600/20 text-red-500 text-xs font-bold uppercase tracking-widest mb-6">
+                  <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-600/10 border border-red-600/20 text-red-500 text-[10px] md:text-xs font-bold uppercase tracking-widest mb-6">
                     <Flame size={14} /> Sua jornada começa aqui
                   </motion.div>
-                  <h1 className="text-6xl md:text-8xl font-bold tracking-tighter leading-[0.9] mb-8">
+                  <h1 className="text-4xl sm:text-6xl md:text-8xl font-bold tracking-tighter leading-[0.9] mb-8">
                     {config.heroTitle.split(' ').map((word, i) => (
                       <span key={i} className={i === config.heroTitle.split(' ').length - 1 ? "text-red-600" : ""}>{word} </span>
                     ))}
                   </h1>
-                  <p className="text-xl text-white/60 max-w-lg mb-10 leading-relaxed">
+                  <p className="text-lg md:text-xl text-white/60 max-w-lg mb-10 leading-relaxed">
                     Planos de treino personalizados, análise de performance em tempo real e o guia definitivo para sua primeira maratona.
                   </p>
                   <div className="flex flex-wrap gap-4">
-                    <button onClick={() => setShowGeneratorModal(true)} disabled={isGenerating} className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl transition-all flex items-center gap-2 group disabled:opacity-50">
+                    <button onClick={() => setShowGeneratorModal(true)} disabled={isGenerating} className="w-full sm:w-auto px-8 py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 group disabled:opacity-50">
                       {isGenerating ? "Gerando Plano..." : "Começar Agora"}
                       <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                     </button>
-                    <button onClick={() => setActiveTab('ebook')} className="px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl transition-all">
+                    <button onClick={() => setActiveTab('ebook')} className="w-full sm:w-auto px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl transition-all">
                       Ver Ebook
                     </button>
                   </div>
@@ -2291,8 +2385,8 @@ export default function App() {
         {showLoginModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowLoginModal(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="relative w-full max-w-md bg-[#111] border border-white/10 rounded-[2.5rem] p-10 shadow-2xl max-h-[90vh] overflow-y-auto">
-              <h3 className="text-2xl font-bold mb-8 text-center">
+            <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="relative w-full max-w-md bg-[#111] border border-white/10 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <h3 className="text-xl md:text-2xl font-bold mb-6 md:mb-8 text-center">
                 {loginMode === 'login' && 'Entrar no StrideFlow'}
                 {loginMode === 'register' && 'Criar Conta'}
                 {loginMode === 'phone' && 'Entrar com Telefone'}
