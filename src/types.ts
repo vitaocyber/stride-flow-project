@@ -41,6 +41,15 @@ export interface RunActivity {
   }[];
 }
 
+export interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  tier: 'gold' | 'silver' | 'bronze' | 'none';
+  date: string;
+  category: string;
+}
+
 export interface UserProfile {
   email: string;
   displayName: string;
@@ -54,6 +63,8 @@ export interface UserProfile {
   completedWorkouts: string[]; // workout IDs
   currentPlan?: TrainingPlan;
   hasPurchasedEbook?: boolean;
+  badges?: Badge[];
+  bestTimes?: Record<string, number[]>; // e.g. { "500m": [120, 130, 140] } (seconds)
 }
 
 export interface UserStats {

@@ -61,7 +61,7 @@ import L from 'leaflet';
 import { cn } from './lib/utils';
 import { generateTrainingPlan } from './lib/gemini';
 import { validateCPF } from './lib/validation';
-import { TrainingPlan, Workout, UserStats, RunActivity, UserProfile, Community, CommunityEvent, ActivityType } from './types';
+import { TrainingPlan, Workout, UserStats, RunActivity, UserProfile, Community, CommunityEvent, ActivityType, Badge } from './types';
 import { 
   db, 
   auth, 
@@ -613,6 +613,50 @@ export default function App() {
     }
   };
 
+  const handleJoinEvent = async (communityId: string, eventId: string) => {
+    if (!user || !user.email) return;
+    try {
+      const communityRef = doc(db, 'communities', communityId);
+      const community = communities.find(c => c.id === communityId);
+      if (!community) return;
+
+      const updatedEvents = community.events.map(event => {
+        if (event.id === eventId) {
+          if (!event.attendees.includes(user.email!)) {
+            return { ...event, attendees: [...event.attendees, user.email!] };
+          }
+        }
+        return event;
+      });
+
+      await updateDoc(communityRef, {
+        events: updatedEvents
+      });
+
+      // Award "Event Participant" badge
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const profileData = userSnap.data() as UserProfile;
+        const currentBadges = profileData.badges || [];
+        if (!currentBadges.some(b => b.id === 'event-participant')) {
+          await updateDoc(userRef, {
+            badges: arrayUnion({
+              id: 'event-participant',
+              name: 'Participante de Eventos',
+              description: 'Você se inscreveu em seu primeiro evento comunitário!',
+              tier: 'bronze',
+              date: new Date().toISOString(),
+              category: 'milestone'
+            })
+          });
+        }
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `communities/${communityId}`);
+    }
+  };
+
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCommunity || !user) return;
@@ -795,6 +839,115 @@ export default function App() {
     setShowSummaryModal(true);
   };
 
+  const checkAndAwardBadges = async (activity: any) => {
+    if (!user) return;
+    
+    // Fetch latest profile to ensure we have current badges and best times
+    const userRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) return;
+    
+    const profileData = userSnap.data() as UserProfile;
+    const currentBestTimes = profileData.bestTimes || {};
+    const currentBadges = profileData.badges || [];
+    let updatedBestTimes = { ...currentBestTimes };
+    let newBadges: Badge[] = [];
+
+    // 1. Check for "First Run" badge
+    if (profileData.totalRuns === 0 && !currentBadges.some(b => b.id === 'first-run')) {
+      newBadges.push({
+        id: 'first-run',
+        name: 'Primeira Corrida',
+        description: 'Você completou sua primeira corrida no StrideFlow!',
+        tier: 'none',
+        date: new Date().toISOString(),
+        category: 'milestone'
+      });
+    }
+
+    // 2. Check for distance milestones (500m to 10km)
+    const milestones = [
+      { dist: 0.5, label: '500m' },
+      { dist: 1, label: '1km' },
+      { dist: 2, label: '2km' },
+      { dist: 3, label: '3km' },
+      { dist: 4, label: '4km' },
+      { dist: 5, label: '5km' },
+      { dist: 6, label: '6km' },
+      { dist: 7, label: '7km' },
+      { dist: 8, label: '8km' },
+      { dist: 9, label: '9km' },
+      { dist: 10, label: '10km' },
+    ];
+
+    for (const m of milestones) {
+      if (activity.distance >= m.dist) {
+        // Calculate estimated time for this specific distance based on average pace
+        const paceInSecondsPerKm = activity.duration / activity.distance;
+        const timeForMilestone = paceInSecondsPerKm * m.dist;
+
+        const times = updatedBestTimes[m.label] || [];
+        // Add new time and sort, keep only top 3
+        const newTimes = [...times, timeForMilestone].sort((a, b) => a - b).slice(0, 3);
+        
+        // If the top 3 changed, update best times and check for medals
+        if (JSON.stringify(newTimes) !== JSON.stringify(times)) {
+          updatedBestTimes[m.label] = newTimes;
+          
+          // Find if the current run made it into the top 3
+          const rank = newTimes.indexOf(timeForMilestone);
+          if (rank !== -1) {
+            const tiers: ('gold' | 'silver' | 'bronze')[] = ['gold', 'silver', 'bronze'];
+            const tier = tiers[rank];
+            
+            // Check if this badge already exists for this tier and category
+            const alreadyHasBadge = currentBadges.some(b => b.category === m.label && b.tier === tier);
+            
+            if (!alreadyHasBadge) {
+              newBadges.push({
+                id: `${m.label}-${tier}-${Date.now()}`,
+                name: `${tier === 'gold' ? 'Ouro' : tier === 'silver' ? 'Prata' : 'Bronze'} nos ${m.label}`,
+                description: `${rank + 1}º melhor tempo nos ${m.label}: ${formatDuration(Math.round(timeForMilestone))}`,
+                tier,
+                date: new Date().toISOString(),
+                category: m.label
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Check for "Marathoner" or other distance milestones
+    if (activity.distance >= 42.195 && !currentBadges.some(b => b.id === 'marathoner')) {
+      newBadges.push({
+        id: 'marathoner',
+        name: 'Maratonista',
+        description: 'Você completou uma maratona!',
+        tier: 'gold',
+        date: new Date().toISOString(),
+        category: 'milestone'
+      });
+    } else if (activity.distance >= 21.097 && !currentBadges.some(b => b.id === 'half-marathoner')) {
+      newBadges.push({
+        id: 'half-marathoner',
+        name: 'Meia Maratona',
+        description: 'Você completou uma meia maratona!',
+        tier: 'silver',
+        date: new Date().toISOString(),
+        category: 'milestone'
+      });
+    }
+
+    // Update profile with new badges and best times
+    if (newBadges.length > 0 || JSON.stringify(updatedBestTimes) !== JSON.stringify(currentBestTimes)) {
+      await updateDoc(userRef, {
+        badges: arrayUnion(...newBadges),
+        bestTimes: updatedBestTimes
+      });
+    }
+  };
+
   const handlePublishActivity = async () => {
     if (!summaryActivity || !user) return;
 
@@ -815,6 +968,9 @@ export default function App() {
         totalDistance: increment(activityData.distance),
         totalRuns: increment(1)
       });
+
+      // Award badges
+      await checkAndAwardBadges(activityData);
 
       setShowSummaryModal(false);
       setSummaryActivity(null);
@@ -1529,16 +1685,29 @@ export default function App() {
                           {selectedCommunity.events.length > 0 ? (
                             selectedCommunity.events.map(event => (
                               <div key={event.id} className="group cursor-pointer">
-                                <div className="flex gap-4">
-                                  <div className="w-12 h-12 rounded-2xl bg-white/5 flex flex-col items-center justify-center border border-white/10 group-hover:bg-red-600 group-hover:border-red-600 transition-all">
+                                <div className="flex gap-4 items-start">
+                                  <div className="w-12 h-12 rounded-2xl bg-white/5 flex flex-col items-center justify-center border border-white/10 group-hover:bg-red-600 group-hover:border-red-600 transition-all shrink-0">
                                     <span className="text-[10px] font-bold uppercase text-white/40 group-hover:text-white/60">{new Date(event.date).toLocaleDateString('pt-BR', { month: 'short' })}</span>
                                     <span className="text-lg font-black leading-none">{new Date(event.date).getDate()}</span>
                                   </div>
-                                  <div className="flex-1">
-                                    <h5 className="font-bold text-sm mb-1 group-hover:text-red-500 transition-colors">{event.title}</h5>
-                                    <div className="flex items-center gap-2 text-[10px] text-white/40 font-bold uppercase tracking-widest">
+                                  <div className="flex-1 min-w-0">
+                                    <h5 className="font-bold text-sm mb-1 group-hover:text-red-500 transition-colors truncate">{event.title}</h5>
+                                    <div className="flex items-center gap-2 text-[10px] text-white/40 font-bold uppercase tracking-widest mb-3">
                                       <MapPin size={10} /> {event.location}
                                     </div>
+                                    
+                                    {!event.attendees.includes(user?.email || "") ? (
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); handleJoinEvent(selectedCommunity.id, event.id); }}
+                                        className="px-4 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-[10px] font-bold transition-all"
+                                      >
+                                        Participar
+                                      </button>
+                                    ) : (
+                                      <div className="flex items-center gap-1.5 text-green-500 text-[10px] font-bold uppercase tracking-widest">
+                                        <CheckCircle2 size={12} /> Confirmado
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -1725,6 +1894,48 @@ export default function App() {
                 </div>
 
                 <div className="lg:col-span-2 space-y-8">
+                  <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8">
+                    <div className="flex items-center justify-between mb-8">
+                      <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest">Conquistas & Distintivos</h4>
+                      <Trophy size={16} className="text-red-500" />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {profile.badges && profile.badges.length > 0 ? (
+                        profile.badges.map((badge) => (
+                          <motion.div 
+                            key={badge.id}
+                            whileHover={{ scale: 1.05 }}
+                            className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col items-center text-center group relative cursor-help"
+                          >
+                            <div className={cn(
+                              "w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-all group-hover:shadow-lg",
+                              badge.tier === 'gold' ? "bg-yellow-500/20 text-yellow-500 shadow-yellow-500/20" :
+                              badge.tier === 'silver' ? "bg-slate-300/20 text-slate-300 shadow-slate-300/20" :
+                              badge.tier === 'bronze' ? "bg-orange-700/20 text-orange-700 shadow-orange-700/20" :
+                              "bg-red-600/20 text-red-600 shadow-red-600/20"
+                            )}>
+                              {badge.category === 'milestone' ? <Award size={24} /> : <Trophy size={24} />}
+                            </div>
+                            <p className="text-[10px] font-black uppercase tracking-tighter leading-tight">{badge.name}</p>
+                            
+                            {/* Tooltip */}
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-3 bg-black border border-white/10 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-2xl">
+                              <p className="text-xs font-bold mb-1">{badge.name}</p>
+                              <p className="text-[10px] text-white/40 mb-2">{badge.description}</p>
+                              <p className="text-[8px] text-white/20 uppercase tracking-widest">{new Date(badge.date).toLocaleDateString('pt-BR')}</p>
+                            </div>
+                          </motion.div>
+                        ))
+                      ) : (
+                        <div className="col-span-full py-12 text-center border-2 border-dashed border-white/5 rounded-3xl">
+                          <Trophy size={32} className="text-white/10 mx-auto mb-4" />
+                          <p className="text-sm text-white/20">Nenhuma conquista ainda. Comece a correr para ganhar distintivos!</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-3 gap-4 mb-8">
                     {[
                       { type: '5k', label: 'Iniciante 5K' },
